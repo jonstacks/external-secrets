@@ -472,9 +472,31 @@ func (m *VaultClient) Get(_ context.Context, vaultID string) (*ngrok.Vault, erro
 	return m.store.GetVaultByID(vaultID)
 }
 
+// GetByName retrieves a vault by its name. If the vault does not exist, it returns an error.
+func (m *VaultClient) GetByName(_ context.Context, name string) (*ngrok.Vault, error) {
+	vault := m.store.GetVaultByName(name)
+	if vault == nil {
+		return nil, NotFound(name)
+	}
+	return vault, nil
+}
+
 func (m *VaultClient) GetSecretsByVault(id string, paging *ngrok.Paging) ngrok.Iter[*ngrok.Secret] {
 	secrets, err := m.store.ListVaultSecrets(id)
 	return NewIter(secrets, err)
+}
+
+// GetSecretByName retrieves a secret by its name within a specific vault.
+func (m *VaultClient) GetSecretByName(_ context.Context, vaultID, name string) (*ngrok.Secret, error) {
+	vault, ok := m.store.getVault(vaultID)
+	if !ok {
+		return nil, NotFound(vaultID)
+	}
+	secret := vault.GetSecretByName(name)
+	if secret == nil {
+		return nil, NotFound(name)
+	}
+	return secret, nil
 }
 
 // WithListError sets an error to be returned when List is called.

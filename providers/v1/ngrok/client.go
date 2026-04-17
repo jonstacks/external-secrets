@@ -55,11 +55,87 @@ type PushSecretMetadataSpec struct {
 	Metadata map[string]string `json:"metadata,omitempty"`
 }
 
+// vaultClientWrapper wraps the ngrok vaults client and adds filtering support.
+type vaultClientWrapper interface {
+	VaultClient
+	GetUnderlyingClient() interface{}
+}
+
+// vaultClientImpl implements the VaultClient interface with filtering support.
+type vaultClientImpl struct {
+	client interface {
+		Create(context.Context, *ngrok.VaultCreate) (*ngrok.Vault, error)
+		Get(context.Context, string) (*ngrok.Vault, error)
+		GetSecretsByVault(string, *ngrok.Paging) ngrok.Iter[*ngrok.Secret]
+		List(*ngrok.Paging) ngrok.Iter[*ngrok.Vault]
+	}
+}
+
+func (v *vaultClientImpl) Create(ctx context.Context, arg *ngrok.VaultCreate) (*ngrok.Vault, error) {
+	return v.client.Create(ctx, arg)
+}
+
+func (v *vaultClientImpl) Get(ctx context.Context, id string) (*ngrok.Vault, error) {
+	return v.client.Get(ctx, id)
+}
+
+func (v *vaultClientImpl) GetByName(ctx context.Context, name string) (*ngrok.Vault, error) {
+	// Use the List method and iterate to find by name
+	// TODO: Once ngrok-api-go SDK supports FilteredPaging for vaults,
+	// use filter parameter like: filter="name == 'name'"
+	iter := v.client.List(nil)
+	for iter.Next(ctx) {
+		vault := iter.Item()
+		if vault.Name == name {
+			return vault, nil
+		}
+	}
+
+	if iter.Err() != nil {
+		return nil, iter.Err()
+	}
+
+	return nil, errVaultDoesNotExist
+}
+
+func (v *vaultClientImpl) GetSecretsByVault(id string, paging *ngrok.Paging) ngrok.Iter[*ngrok.Secret] {
+	return v.client.GetSecretsByVault(id, paging)
+}
+
+func (v *vaultClientImpl) GetSecretByName(ctx context.Context, vaultID, name string) (*ngrok.Secret, error) {
+	// Use the GetSecretsByVault method and iterate to find by name
+	// TODO: Once ngrok-api-go SDK supports FilteredPaging for secrets,
+	// use filter parameter like: filter="name == 'name'"
+	iter := v.client.GetSecretsByVault(vaultID, nil)
+	for iter.Next(ctx) {
+		secret := iter.Item()
+		if secret.Name == name {
+			return secret, nil
+		}
+	}
+
+	if iter.Err() != nil {
+		return nil, iter.Err()
+	}
+
+	return nil, fmt.Errorf("secret '%s' does not exist: %w", name, errVaultSecretDoesNotExist)
+}
+
+func (v *vaultClientImpl) List(paging *ngrok.Paging) ngrok.Iter[*ngrok.Vault] {
+	return v.client.List(paging)
+}
+
+func (v *vaultClientImpl) GetUnderlyingClient() interface{} {
+	return v.client
+}
+
 // VaultClient defines interface for interactions with ngrok vault API.
 type VaultClient interface {
 	Create(context.Context, *ngrok.VaultCreate) (*ngrok.Vault, error)
 	Get(context.Context, string) (*ngrok.Vault, error)
+	GetByName(context.Context, string) (*ngrok.Vault, error)
 	GetSecretsByVault(string, *ngrok.Paging) ngrok.Iter[*ngrok.Secret]
+	GetSecretByName(context.Context, string, string) (*ngrok.Secret, error)
 	List(*ngrok.Paging) ngrok.Iter[*ngrok.Vault]
 }
 
@@ -270,39 +346,12 @@ func (c *client) refreshVaultID(ctx context.Context) error {
 }
 
 func (c *client) getVaultByName(ctx context.Context, name string) (*ngrok.Vault, error) {
-	listCtx, cancel := context.WithTimeout(ctx, defaultListTimeout)
-	defer cancel()
-
-	iter := c.vaultClient.List(nil)
-	for iter.Next(listCtx) {
-		vault := iter.Item()
-		if vault.Name == name {
-			return vault, nil
-		}
-	}
-
-	if iter.Err() != nil {
-		return nil, iter.Err()
-	}
-
-	return nil, errVaultDoesNotExist
+	return c.vaultClient.GetByName(ctx, name)
 }
 
 // getSecretByVaultIDAndName retrieves a secret by its vault ID and secret name.
 func (c *client) getSecretByVaultIDAndName(ctx context.Context, vaultID, name string) (*ngrok.Secret, error) {
-	iter := c.vaultClient.GetSecretsByVault(vaultID, nil)
-	for iter.Next(ctx) {
-		secret := iter.Item()
-		if secret.Name == name {
-			return secret, nil
-		}
-	}
-
-	if iter.Err() != nil {
-		return nil, iter.Err()
-	}
-
-	return nil, fmt.Errorf("secret '%s' does not exist: %w", name, errVaultSecretDoesNotExist)
+	return c.vaultClient.GetSecretByName(ctx, vaultID, name)
 }
 
 func parseAndDefaultMetadata(data *v1.JSON) (PushSecretMetadataSpec, error) {

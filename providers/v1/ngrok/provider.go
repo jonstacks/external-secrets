@@ -50,7 +50,7 @@ type vaultClientFactory func(cfg *ngrok.ClientConfig) VaultClient
 type secretsClientFactory func(cfg *ngrok.ClientConfig) SecretsClient
 
 var getVaultsClient vaultClientFactory = func(cfg *ngrok.ClientConfig) VaultClient {
-	return vaults.NewClient(cfg)
+	return &vaultClientImpl{client: vaults.NewClient(cfg)}
 }
 
 var getSecretsClient secretsClientFactory = func(cfg *ngrok.ClientConfig) SecretsClient {
@@ -94,17 +94,9 @@ func (p *Provider) NewClient(ctx context.Context, store esv1.GenericStore, kubeC
 	listCtx, cancel := context.WithTimeout(ctx, defaultListTimeout)
 	defer cancel()
 
-	var vault *ngrok.Vault
-	vaultIter := vaultClient.List(nil)
-	for vaultIter.Next(listCtx) {
-		if vaultIter.Item().Name == cfg.Vault.Name {
-			vault = vaultIter.Item()
-			break
-		}
-	}
-
-	if err := vaultIter.Err(); err != nil {
-		return nil, fmt.Errorf("error listing vaults: %w", err)
+	vault, err := vaultClient.GetByName(listCtx, cfg.Vault.Name)
+	if err != nil {
+		return nil, fmt.Errorf("error getting vault %q: %w", cfg.Vault.Name, err)
 	}
 
 	if vault == nil {
