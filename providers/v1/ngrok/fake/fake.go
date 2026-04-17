@@ -652,9 +652,7 @@ func applyVaultFilter(filter string, vault *ngrok.Vault) bool {
 // This is a simplified implementation that supports vault.id and name equality checks.
 func applySecretFilter(filter string, secret *ngrok.Secret) bool {
 	// Split by && to handle multiple conditions
-	conditions := strings.Split(filter, "&&")
-
-	for _, condition := range conditions {
+	for condition := range strings.SplitSeq(filter, "&&") {
 		condition = strings.TrimSpace(condition)
 
 		// Check for vault.id == "value"
