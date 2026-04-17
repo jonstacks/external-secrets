@@ -346,12 +346,36 @@ func (c *client) refreshVaultID(ctx context.Context) error {
 }
 
 func (c *client) getVaultByName(ctx context.Context, name string) (*ngrok.Vault, error) {
-	return c.vaultClient.GetByName(ctx, name)
+	vault, err := c.vaultClient.GetByName(ctx, name)
+	if err != nil {
+		// Check if it's a 404 not found error
+		var ngrokErr *ngrok.Error
+		if errors.As(err, &ngrokErr) && ngrokErr.StatusCode == 404 {
+			return nil, errVaultDoesNotExist
+		}
+		return nil, err
+	}
+	if vault == nil {
+		return nil, errVaultDoesNotExist
+	}
+	return vault, nil
 }
 
 // getSecretByVaultIDAndName retrieves a secret by its vault ID and secret name.
 func (c *client) getSecretByVaultIDAndName(ctx context.Context, vaultID, name string) (*ngrok.Secret, error) {
-	return c.vaultClient.GetSecretByName(ctx, vaultID, name)
+	secret, err := c.vaultClient.GetSecretByName(ctx, vaultID, name)
+	if err != nil {
+		// Check if it's a 404 not found error
+		var ngrokErr *ngrok.Error
+		if errors.As(err, &ngrokErr) && ngrokErr.StatusCode == 404 {
+			return nil, errVaultSecretDoesNotExist
+		}
+		return nil, err
+	}
+	if secret == nil {
+		return nil, errVaultSecretDoesNotExist
+	}
+	return secret, nil
 }
 
 func parseAndDefaultMetadata(data *v1.JSON) (PushSecretMetadataSpec, error) {

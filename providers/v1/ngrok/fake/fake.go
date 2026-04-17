@@ -474,6 +474,9 @@ func (m *VaultClient) Get(_ context.Context, vaultID string) (*ngrok.Vault, erro
 
 // GetByName retrieves a vault by its name. If the vault does not exist, it returns an error.
 func (m *VaultClient) GetByName(_ context.Context, name string) (*ngrok.Vault, error) {
+	if m.listErr != nil {
+		return nil, m.listErr
+	}
 	vault := m.store.GetVaultByName(name)
 	if vault == nil {
 		return nil, NotFound(name)
@@ -488,6 +491,9 @@ func (m *VaultClient) GetSecretsByVault(id string, paging *ngrok.Paging) ngrok.I
 
 // GetSecretByName retrieves a secret by its name within a specific vault.
 func (m *VaultClient) GetSecretByName(_ context.Context, vaultID, name string) (*ngrok.Secret, error) {
+	if m.listErr != nil {
+		return nil, m.listErr
+	}
 	vault, ok := m.store.getVault(vaultID)
 	if !ok {
 		return nil, NotFound(vaultID)

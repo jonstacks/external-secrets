@@ -96,7 +96,12 @@ func (p *Provider) NewClient(ctx context.Context, store esv1.GenericStore, kubeC
 
 	vault, err := vaultClient.GetByName(listCtx, cfg.Vault.Name)
 	if err != nil {
-		return nil, fmt.Errorf("error getting vault %q: %w", cfg.Vault.Name, err)
+		// Check if it's a 404 not found error
+		var ngrokErr *ngrok.Error
+		if errors.As(err, &ngrokErr) && ngrokErr.StatusCode == 404 {
+			return nil, fmt.Errorf("vault %q not found", cfg.Vault.Name)
+		}
+		return nil, fmt.Errorf("error listing vaults: %w", err)
 	}
 
 	if vault == nil {
