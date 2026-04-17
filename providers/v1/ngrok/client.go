@@ -55,12 +55,6 @@ type PushSecretMetadataSpec struct {
 	Metadata map[string]string `json:"metadata,omitempty"`
 }
 
-// vaultClientWrapper wraps the ngrok vaults client and adds filtering support.
-type vaultClientWrapper interface {
-	VaultClient
-	GetUnderlyingClient() interface{}
-}
-
 // vaultClientImpl implements the VaultClient interface with filtering support.
 type vaultClientImpl struct {
 	client interface {
@@ -123,10 +117,6 @@ func (v *vaultClientImpl) GetSecretByName(ctx context.Context, vaultID, name str
 
 func (v *vaultClientImpl) List(paging *ngrok.Paging) ngrok.Iter[*ngrok.Vault] {
 	return v.client.List(paging)
-}
-
-func (v *vaultClientImpl) GetUnderlyingClient() interface{} {
-	return v.client
 }
 
 // VaultClient defines interface for interactions with ngrok vault API.
