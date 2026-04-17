@@ -27,7 +27,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ngrok/ngrok-api-go/v7"
+	"github.com/ngrok/ngrok-api-go/v8"
 )
 
 func GenerateRandomString(length int) string {
@@ -485,8 +485,21 @@ func (m *VaultClient) WithListError(err error) *VaultClient {
 
 // List returns an iterator over the vaults.
 // If an error is set, it will return that error instead of the vaults.
-func (m *VaultClient) List(paging *ngrok.Paging) ngrok.Iter[*ngrok.Vault] {
-	return NewIter(m.store.ListVaults(), m.listErr)
+func (m *VaultClient) List(paging *ngrok.FilteredPaging) ngrok.Iter[*ngrok.Vault] {
+	vaults := m.store.ListVaults()
+
+	// Apply filtering if provided
+	if paging != nil && paging.Filter != nil {
+		filtered := []*ngrok.Vault{}
+		for _, vault := range vaults {
+			if applyVaultFilter(*paging.Filter, vault) {
+				filtered = append(filtered, vault)
+			}
+		}
+		vaults = filtered
+	}
+
+	return NewIter(vaults, m.listErr)
 }
 
 // SecretsClient is a mock implementation of the SecretsClient interface.
@@ -563,8 +576,21 @@ func (m *SecretsClient) WithListError(err error) *SecretsClient {
 
 // List returns an iterator over the secrets.
 // If an error is set, it will return that error instead of the secrets.
-func (m *SecretsClient) List(paging *ngrok.Paging) ngrok.Iter[*ngrok.Secret] {
-	return NewIter(m.store.ListSecrets(), m.listErr)
+func (m *SecretsClient) List(paging *ngrok.FilteredPaging) ngrok.Iter[*ngrok.Secret] {
+	secrets := m.store.ListSecrets()
+
+	// Apply filtering if provided
+	if paging != nil && paging.Filter != nil {
+		filtered := []*ngrok.Secret{}
+		for _, secret := range secrets {
+			if applySecretFilter(*paging.Filter, secret) {
+				filtered = append(filtered, secret)
+			}
+		}
+		secrets = filtered
+	}
+
+	return NewIter(secrets, m.listErr)
 }
 
 // Iter is a mock iterator that implements the ngrok.Iter[T] interface.
@@ -603,4 +629,58 @@ func NewIter[T any](items []T, err error) *Iter[T] {
 		err:   err,
 		n:     -1,
 	}
+}
+
+// applyVaultFilter applies a simple CEL-like filter expression to a vault.
+// This is a simplified implementation that only supports name equality checks.
+func applyVaultFilter(filter string, vault *ngrok.Vault) bool {
+	// Simple parser for: name == "value"
+	if strings.Contains(filter, "name ==") {
+		// Extract the value between quotes
+		parts := strings.Split(filter, "name ==")
+		if len(parts) == 2 {
+			value := strings.TrimSpace(parts[1])
+			// Remove quotes
+			value = strings.Trim(value, `"`)
+			return vault.Name == value
+		}
+	}
+	return false
+}
+
+// applySecretFilter applies a simple CEL-like filter expression to a secret.
+// This is a simplified implementation that supports vault.id and name equality checks.
+func applySecretFilter(filter string, secret *ngrok.Secret) bool {
+	// Split by && to handle multiple conditions
+	conditions := strings.Split(filter, "&&")
+
+	for _, condition := range conditions {
+		condition = strings.TrimSpace(condition)
+
+		// Check for vault.id == "value"
+		if strings.Contains(condition, "vault.id ==") {
+			parts := strings.Split(condition, "vault.id ==")
+			if len(parts) == 2 {
+				value := strings.TrimSpace(parts[1])
+				value = strings.Trim(value, `"`)
+				if secret.Vault.ID != value {
+					return false
+				}
+			}
+		}
+
+		// Check for name == "value"
+		if strings.Contains(condition, "name ==") {
+			parts := strings.Split(condition, "name ==")
+			if len(parts) == 2 {
+				value := strings.TrimSpace(parts[1])
+				value = strings.Trim(value, `"`)
+				if secret.Name != value {
+					return false
+				}
+			}
+		}
+	}
+
+	return true
 }

@@ -22,9 +22,9 @@ import (
 	"fmt"
 	"net/url"
 
-	"github.com/ngrok/ngrok-api-go/v7"
-	"github.com/ngrok/ngrok-api-go/v7/secrets"
-	"github.com/ngrok/ngrok-api-go/v7/vaults"
+	"github.com/ngrok/ngrok-api-go/v8"
+	"github.com/ngrok/ngrok-api-go/v8/secrets"
+	"github.com/ngrok/ngrok-api-go/v8/vaults"
 	kubeClient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
@@ -94,13 +94,15 @@ func (p *Provider) NewClient(ctx context.Context, store esv1.GenericStore, kubeC
 	listCtx, cancel := context.WithTimeout(ctx, defaultListTimeout)
 	defer cancel()
 
+	// Use API filtering to find vault by name
+	filterExpr := fmt.Sprintf("name == %q", cfg.Vault.Name)
 	var vault *ngrok.Vault
-	vaultIter := vaultClient.List(nil)
+	vaultIter := vaultClient.List(&ngrok.FilteredPaging{
+		Filter: &filterExpr,
+	})
 	for vaultIter.Next(listCtx) {
-		if vaultIter.Item().Name == cfg.Vault.Name {
-			vault = vaultIter.Item()
-			break
-		}
+		vault = vaultIter.Item()
+		break
 	}
 
 	if err := vaultIter.Err(); err != nil {

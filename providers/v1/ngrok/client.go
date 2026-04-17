@@ -27,7 +27,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ngrok/ngrok-api-go/v7"
+	"github.com/ngrok/ngrok-api-go/v8"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 
@@ -60,7 +60,7 @@ type VaultClient interface {
 	Create(context.Context, *ngrok.VaultCreate) (*ngrok.Vault, error)
 	Get(context.Context, string) (*ngrok.Vault, error)
 	GetSecretsByVault(string, *ngrok.Paging) ngrok.Iter[*ngrok.Secret]
-	List(*ngrok.Paging) ngrok.Iter[*ngrok.Vault]
+	List(*ngrok.FilteredPaging) ngrok.Iter[*ngrok.Vault]
 }
 
 // SecretsClient defines interface for interactions with ngrok secrets API.
@@ -68,7 +68,7 @@ type SecretsClient interface {
 	Create(context.Context, *ngrok.SecretCreate) (*ngrok.Secret, error)
 	Delete(context.Context, string) error
 	Get(context.Context, string) (*ngrok.Secret, error)
-	List(*ngrok.Paging) ngrok.Iter[*ngrok.Secret]
+	List(*ngrok.FilteredPaging) ngrok.Iter[*ngrok.Secret]
 	Update(context.Context, *ngrok.SecretUpdate) (*ngrok.Secret, error)
 }
 
@@ -273,12 +273,14 @@ func (c *client) getVaultByName(ctx context.Context, name string) (*ngrok.Vault,
 	listCtx, cancel := context.WithTimeout(ctx, defaultListTimeout)
 	defer cancel()
 
-	iter := c.vaultClient.List(nil)
+	// Use API filtering to find vault by name
+	filterExpr := fmt.Sprintf("name == %q", name)
+	iter := c.vaultClient.List(&ngrok.FilteredPaging{
+		Filter: &filterExpr,
+	})
 	for iter.Next(listCtx) {
 		vault := iter.Item()
-		if vault.Name == name {
-			return vault, nil
-		}
+		return vault, nil
 	}
 
 	if iter.Err() != nil {
@@ -290,12 +292,14 @@ func (c *client) getVaultByName(ctx context.Context, name string) (*ngrok.Vault,
 
 // getSecretByVaultIDAndName retrieves a secret by its vault ID and secret name.
 func (c *client) getSecretByVaultIDAndName(ctx context.Context, vaultID, name string) (*ngrok.Secret, error) {
-	iter := c.vaultClient.GetSecretsByVault(vaultID, nil)
+	// Use API filtering to find secret by vault ID and name
+	filterExpr := fmt.Sprintf("vault.id == %q && name == %q", vaultID, name)
+	iter := c.secretsClient.List(&ngrok.FilteredPaging{
+		Filter: &filterExpr,
+	})
 	for iter.Next(ctx) {
 		secret := iter.Item()
-		if secret.Name == name {
-			return secret, nil
-		}
+		return secret, nil
 	}
 
 	if iter.Err() != nil {
